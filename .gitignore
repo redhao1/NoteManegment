@@ -1,0 +1,121 @@
+# IntelliJ IDEA
+.idea/
+*.iml
+*.ipr
+*.iws
+
+# Eclipse
+.project
+.settings/
+.classpath
+*.project
+
+# VS Code
+.vscode/
+!.vscode/extensions.json
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg
+*.egg-info/
+.eggs/
+dist/
+build/
+.tox/
+.coverage
+.cache
+.pytest_cache/
+.mypy_cache/
+
+# Node.js
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+.pnp
+.pnp.js
+
+# Package artifacts
+*.tgz
+*.tar.gz
+*.zip
+
+# Java / Maven
+*.class
+*.jar
+*.war
+*.ear
+.mvn/
+target/
+
+# Gradle
+.gradle/
+build/
+!.gradle
+!.gradle.properties
+gradle.properties
+
+# OS
+.DS_Store
+Thumbs.db
+ehthumbs.db
+[A-Za-z]._TemporaryItems
+[A-Za-z].DS_Store
+# Windows
+$RECYCLE.BIN/
+*.tmp
+
+# Environment / secrets
+.env
+.env.*
+!.env.example
+.env.local
+.env.development
+.env.production
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Testing / coverage
+coverage/
+.coverage
+htmlcov/
+.tox/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.lcov
+
+# TypeScript
+*.tsbuildinfo
+
+# Build output
+dist/
+build/
+out/
+*.min.js
+
+# Docker
+.dockerignore
+docker-compose.override.yml
+
+# Editors
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Misc
+*.bak
+*.tmp
+*.temp
+tmp/
+temp/
