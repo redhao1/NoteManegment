@@ -1,11 +1,12 @@
 import { createServer } from 'http';
 import { URL } from 'url';
-import { PORT } from './config.js';
+import { PORT, parsePageMappings } from './config.js';
 import * as store from './store.js';
 import * as notion from './notion.js';
 import { NOTION, PROPERTIES } from './config.js';
 
 const NOTION_CONFIG = { API_KEY: NOTION.API_KEY, DATABASE_ID: NOTION.DATABASE_ID, PROPERTIES };
+const PAGE_MAPPINGS = parsePageMappings();
 
 // Helper to parse JSON body
 async function parseBody(req) {
@@ -86,10 +87,54 @@ async function handleGetNotes(req, res) {
   }
 }
 
+// Shared sync logic for both single-note and bulk sync
+// Extracts the category → child DB routing and creates the Notion row
+async function syncSingleNote(note) {
+  const mapping = notion.findCategoryMapping(PAGE_MAPPINGS, note.category);
+  const isFallback = mapping && mapping.fallback === 'main_table';
+
+  let notionRowId;
+  let target = isFallback ? 'main_table' : 'child_db';
+
+  if (isFallback) {
+    // Fallback: sync to main table
+    notionRowId = await notion.createNotionRow(NOTION_CONFIG, note);
+  } else {
+    // Sync to child database via mapping
+    const pageId = notion.normalizeNotionId(mapping.page_id);
+    if (!pageId) {
+      throw new Error('No page_id in category mapping');
+    }
+
+    // Get child database ID from page
+    const childDbIds = await notion.getChildDatabaseIds(NOTION.API_KEY, pageId);
+    let databaseId = null;
+
+    if (childDbIds && childDbIds.length > 0) {
+      databaseId = childDbIds[0].databaseId;
+    }
+
+    if (!databaseId) {
+      // If no child DB found, fall back to main table
+      target = 'main_table';
+      notionRowId = await notion.createNotionRow(NOTION_CONFIG, note);
+    } else {
+      // Create row in child database using mapping columns
+      const columnConfigs = mapping.columns || {};
+      const childDbId = databaseId;
+      notionRowId = await notion.createChildRow(NOTION.API_KEY, childDbId, columnConfigs, note);
+    }
+  }
+
+  return { notionRowId, target };
+}
+
 async function handlePostSyncNote(req, res) {
   try {
     const url = new URL(req.url, `http://localhost:${PORT}`);
-    const noteId = url.pathname.split('/').pop(); // /notes/:id/sync
+    // /notes/:id/sync → extract :id (second-to-last segment)
+    const pathSegments = url.pathname.split('/');
+    const noteId = pathSegments[pathSegments.length - 2];
 
     if (!noteId) {
       return errorResponse(res, 400, 'Note ID required');
@@ -104,19 +149,68 @@ async function handlePostSyncNote(req, res) {
       return jsonResponse(res, 200, { message: 'Already synced', note });
     }
 
-    // Push to Notion
-    const notionRowId = await notion.createNotionRow(NOTION_CONFIG, note);
+    // Run shared sync logic
+    const { notionRowId, target } = await syncSingleNote(note);
 
-    // Mark as synced locally
-    const updated = await store.markSynced(noteId);
-    updated.notionRowId = notionRowId;
-    await store.saveNotes(await store.loadNotes()); // Re-save with updated notionRowId
+    // Remove from local storage after successful sync
+    await store.removeNote(noteId);
 
-    console.log(`[${new Date().toISOString()}] Synced note ${noteId} to Notion row ${notionRowId}`);
-    jsonResponse(res, 200, { message: 'Synced successfully', note: updated, notionRowId });
+    console.log(
+      `[${new Date().toISOString()}] Synced note ${noteId} to Notion (${target}): ${notionRowId}`
+    );
+    jsonResponse(res, 200, { message: 'Synced successfully', notionRowId });
   } catch (err) {
     console.error('Error in POST /notes/:id/sync:', err);
     errorResponse(res, 500, err.message || 'Failed to sync to Notion');
+  }
+}
+
+// Bulk sync all unsynced notes
+async function handlePostSyncAll(req, res) {
+  try {
+    const notes = await store.loadNotes();
+    const unsynced = notes.filter((n) => !n.synced);
+
+    if (unsynced.length === 0) {
+      return jsonResponse(res, 200, { message: 'No unsynced notes to sync', count: 0 });
+    }
+
+    const results = {
+      synced: [],
+      failed: [],
+      count: 0,
+    };
+
+    for (const note of unsynced) {
+      try {
+        const { notionRowId, target } = await syncSingleNote(note);
+        await store.removeNote(note.id);
+        results.synced.push({
+          noteId: note.id,
+          merchant: note.merchant,
+          target,
+          notionRowId,
+        });
+        results.count += 1;
+      } catch (err) {
+        results.failed.push({
+          noteId: note.id,
+          merchant: note.merchant,
+          error: err.message,
+        });
+      }
+    }
+
+    console.log(
+      `[${new Date().toISOString()}] Bulk synced ${results.count}/${unsynced.length} notes`
+    );
+    jsonResponse(res, 200, {
+      message: `Bulk synced ${results.count} of ${unsynced.length} notes`,
+      results,
+    });
+  } catch (err) {
+    console.error('Error in POST /sync-all:', err);
+    errorResponse(res, 500, err.message || 'Failed to bulk sync notes');
   }
 }
 
@@ -194,6 +288,10 @@ async function handleRequest(req, res) {
 
   if (path.startsWith('/notes/') && path.endsWith('/sync') && req.method === 'POST') {
     return handlePostSyncNote(req, res);
+  }
+
+  if (path === '/sync-all' && req.method === 'POST') {
+    return handlePostSyncAll(req, res);
   }
 
   if (path === '/month-end' && req.method === 'POST') {

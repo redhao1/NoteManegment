@@ -79,6 +79,18 @@ export async function deleteNote(noteId) {
   return null;
 }
 
+// Remove a note by ID (after successful sync - removes from local storage entirely)
+export async function removeNote(noteId) {
+  const notes = await loadNotes();
+  const idx = notes.findIndex((n) => n.id === noteId);
+  if (idx !== -1) {
+    const [removed] = notes.splice(idx, 1);
+    await saveNotes(notes);
+    return removed;
+  }
+  return null;
+}
+
 // Reset all notes (for testing/cleanup)
 export async function resetNotes() {
   await saveNotes([]);
