@@ -103,6 +103,9 @@ build/
 out/
 *.min.js
 
+# Data
+data/
+
 # Docker
 .dockerignore
 docker-compose.override.yml
@@ -119,3 +122,7 @@ docker-compose.override.yml
 *.temp
 tmp/
 temp/
+
+# This Project only
+.claude
+BudgetTable-example
